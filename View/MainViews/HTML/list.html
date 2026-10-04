@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "icons.html" as ic %}
+{% block content %}
+<h1>User Management</h1>
+
+<div class="toolbar">
+  <form class="search" method="get" action="{{ url_for('index') }}" role="search">
+    <input type="search" name="q" value="{{ q }}" maxlength="80"
+           placeholder="Search by ID or name..." aria-label="Search by ID or name">
+    <button type="submit" class="btn btn-search" aria-label="Search" title="Search">{{ ic.search() }}</button>
+    {% if q %}<a class="clear" href="{{ url_for('index') }}">Clear</a>{% endif %}
+  </form>
+  <a class="btn btn-add" href="{{ url_for('new_user') }}">+ Add User</a>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.name }}</td>
+        <td>{{ u.email }}</td>
+        <td class="actions">
+          <a class="btn btn-edit" href="{{ url_for('edit_user', user_id=u.id) }}"
+             aria-label="Edit {{ u.name }}" title="Edit">{{ ic.edit() }}</a>
+          <a class="btn btn-delete" href="{{ url_for('confirm_delete', user_id=u.id) }}"
+             aria-label="Delete {{ u.name }}" title="Delete">{{ ic.trash() }}</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="empty">
+        {% if q %}No users match “{{ q }}”.{% else %}No users registered yet.{% endif %}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

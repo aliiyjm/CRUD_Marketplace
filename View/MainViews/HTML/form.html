@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+
+{% for e in errors %}<p class="notice notice-error" role="alert">{{ e }}</p>{% endfor %}
+
+<form class="form-card" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if editing %}
+  <label>ID
+    <input name="id" value="{{ data.id }}" readonly>
+  </label>
+  {% endif %}
+  <label>Name
+    <input name="name" value="{{ data.name }}" required maxlength="80">
+  </label>
+  <label>Email
+    <input name="email" type="email" value="{{ data.email }}" required maxlength="120">
+  </label>
+  <div class="form-actions">
+    <a class="btn btn-cancel" href="{{ url_for('index') }}">Cancel</a>
+    <button type="submit" class="btn btn-save">{{ button }}</button>
+  </div>
+</form>
+{% endblock %}

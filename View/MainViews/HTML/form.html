@@ -9,7 +9,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% if editing %}
   <label>ID
-    <input name="id" value="{{ data.id }}" readonly>
+    <input name="id_user" value="{{ data.id_user }}" readonly>
   </label>
   {% endif %}
   <label>Name

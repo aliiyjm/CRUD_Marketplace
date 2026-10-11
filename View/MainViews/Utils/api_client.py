@@ -41,11 +41,14 @@ def _failure(action, status):
 
 def _clean(user):
     """boto3 rejects floats, but the Lambda returns 7771452085.0 and sending it
-    back as-is would fail. Convert whole-number floats to int."""
-    return {
-        k: int(v) if isinstance(v, float) and v.is_integer() else v
-        for k, v in user.items()
-    }
+    back as-is would fail. Convert whole-number floats to int.
+    También renombra la llave 'id' a 'id_user' automáticamente para compatibilidad con la nueva tabla."""
+    cleaned = {}
+    for k, v in user.items():
+        # Si el resto de la interfaz aún manda "id", esto lo corrige a "id_user"
+        new_key = "id_user" if k == "id" else k
+        cleaned[new_key] = int(v) if isinstance(v, float) and v.is_integer() else v
+    return cleaned
 
 
 def _request(method, route, **kwargs):
@@ -72,7 +75,8 @@ def list_users():
 
 def get_user(user_id):
     """Return the full user, or None if it does not exist."""
-    status, data = _request("GET", ROUTE_QUERY, params={"id": user_id})
+    # Cambiado a 'id_user' para coincidir con la Lambda y DynamoDB
+    status, data = _request("GET", ROUTE_QUERY, params={"id_user": user_id})
     if status == 404:
         return None
     if status != 200 or not isinstance(data, dict):
@@ -95,6 +99,7 @@ def update_user(user):
 
 
 def delete_user(user_id):
-    status, _ = _request("DELETE", ROUTE_DELETE, params={"id": user_id})
+    # Cambiado a 'id_user' para coincidir con la Lambda y DynamoDB
+    status, _ = _request("DELETE", ROUTE_DELETE, params={"id_user": user_id})
     if status != 200:
         raise _failure("Could not delete the user", status)

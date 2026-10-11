@@ -74,4 +74,148 @@ def static_js(filename):
 def normalize(text):
     """Lowercase and strip accents: 'maria' matches 'María'."""
     base = unicodedata.normalize("NFD", str(text).lower())
-    return
+    return "".join(c for c in base if unicodedata.category(c) != "Mn")
+
+
+def generate_id():
+    """Automatic unique ID (10 hex characters). Needs no database read."""
+    return uuid.uuid4().hex[:10]
+
+
+def user_name(user):
+    """Records created before the English rename store the name as 'nombre'."""
+    return user.get("name") or user.get("nombre", "")
+
+
+def read_form():
+    return {
+        # Busca id_user, pero tiene fallback a "id" por si la plantilla HTML aún no se actualiza
+        "id_user": request.form.get("id_user", request.form.get("id", "")).strip(),
+        "name": request.form.get("name", "").strip(),
+        "email": request.form.get("email", "").strip(),
+    }
+
+
+def validate(data):
+    errors = []
+    if not ID_RE.fullmatch(data["id_user"]):
+        errors.append("Invalid ID.")
+    if not 1 <= len(data["name"]) <= 80:
+        errors.append("Name is required (maximum 80 characters).")
+    if len(data["email"]) > 120 or not EMAIL_RE.fullmatch(data["email"]):
+        errors.append("Enter a valid email address.")
+    return errors
+
+
+# ---------- Screen 1: list and search ----------
+@app.get("/")
+def index():
+    q = request.args.get("q", "").strip()[:80]
+    try:
+        users = [dict(u, name=user_name(u)) for u in api.list_users() if u.get("id_user")]
+    except api.ApiError as e:
+        flash(str(e), "error")
+        users = []
+    if q:
+        n = normalize(q)
+        users = [u for u in users
+                 if n in normalize(u["id_user"]) or n in normalize(u["name"])]
+    users.sort(key=lambda u: str(u["id_user"]))
+    return render_template("list.html", users=users, q=q)
+
+
+@app.get("/delete/<user_id>")
+def confirm_delete(user_id):
+    """Screen 3: shows the user and asks for confirmation before deleting."""
+    if not ID_RE.fullmatch(user_id):
+        abort(404)
+    try:
+        existing = api.get_user(user_id)
+    except api.ApiError as e:
+        flash(str(e), "error")
+        return redirect(url_for("index"))
+    if existing is None:
+        flash("That user no longer exists.", "error")
+        return redirect(url_for("index"))
+    user = {"id_user": user_id, "name": user_name(existing), "email": existing.get("email", "")}
+    return render_template("confirm_delete.html", user=user)
+
+
+@app.post("/delete/<user_id>")
+def delete_user(user_id):
+    if not ID_RE.fullmatch(user_id):
+        abort(404)
+    try:
+        api.delete_user(user_id)
+        flash("User deleted.", "ok")
+    except api.ApiError as e:
+        flash(str(e), "error")
+    return redirect(url_for("index"))
+
+
+# ---------- Screen 2: form (add / edit) ----------
+@app.route("/new", methods=["GET", "POST"])
+def new_user():
+    data, errors = {"id_user": "", "name": "", "email": ""}, []
+    if request.method == "POST":
+        data = read_form()
+        data["id_user"] = generate_id()  # the ID is never typed by the user
+        errors = validate(data)
+        if not errors:
+            try:
+                # A single POST. If the Lambda reports a repeated ID (very rare),
+                # generate another one and retry.
+                for _ in range(3):
+                    try:
+                        api.add_user(data)
+                        break
+                    except api.DuplicateId:
+                        data["id_user"] = generate_id()
+                else:
+                    raise api.ApiError("Could not generate a unique ID. Please try again.")
+                flash(f"User added with ID {data['id_user']}.", "ok")
+                return redirect(url_for("index"))
+            except api.ApiError as e:
+                errors.append(str(e))
+    return render_template("form.html", title="Add user", button="Add user",
+                           editing=False, data=data, errors=errors)
+
+
+@app.route("/edit/<user_id>", methods=["GET", "POST"])
+def edit_user(user_id):
+    if not ID_RE.fullmatch(user_id):
+        abort(404)
+    try:
+        existing = api.get_user(user_id)
+    except api.ApiError as e:
+        flash(str(e), "error")
+        return redirect(url_for("index"))
+    if existing is None:
+        flash("That user no longer exists.", "error")
+        return redirect(url_for("index"))
+
+    data = {"id_user": user_id, "name": user_name(existing),
+            "email": existing.get("email", "")}
+    errors = []
+    if request.method == "POST":
+        data = read_form()
+        data["id_user"] = user_id  # the ID cannot be changed
+        errors = validate(data)
+        if not errors:
+            # The Lambda uses put_item (replaces the whole record): send the full
+            # user back so fields such as password or numero are not wiped.
+            existing.pop("nombre", None)  # migrate legacy field name
+            existing.update(name=data["name"], email=data["email"])
+            try:
+                api.update_user(existing)
+                flash("Changes saved.", "ok")
+                return redirect(url_for("index"))
+            except api.ApiError as e:
+                errors.append(str(e))
+    return render_template("form.html", title="Edit user", button="Save changes",
+                           editing=True, data=data, errors=errors)
+
+
+if __name__ == "__main__":
+    print(f"API in use: {api.API_URL}")
+    app.run(host="127.0.0.1", port=5000, debug=os.environ.get("FLASK_DEBUG") == "1")
